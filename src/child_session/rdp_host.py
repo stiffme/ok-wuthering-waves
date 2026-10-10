@@ -18,8 +18,8 @@ from src.child_session import pipe as pipe_mod
 
 logger = Logger.get_logger(__name__)
 
-_DEFAULT_WIDTH = 1280
-_DEFAULT_HEIGHT = 720
+_DEFAULT_WIDTH = 1920
+_DEFAULT_HEIGHT = 1080
 
 
 class RdpHostError(RuntimeError):
@@ -56,7 +56,7 @@ class RdpHostProcess:
     def start(self, timeout=30.0):
         exe = self.exe_path()
         if not exe or not os.path.isfile(exe):
-            raise RdpHostError(f"找不到 RdpHost.exe：{exe}（请先构建，见 native/RdpHost/README.md）")
+            raise RdpHostError(f"找不到 RdpHost.exe：{exe}（首次使用会自动下载，或见 native/RdpHost/README.md）")
 
         self._proc = subprocess.Popen([
             exe, "--pipe", self._pipe_name,

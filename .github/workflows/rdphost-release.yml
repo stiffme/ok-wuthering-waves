@@ -1,0 +1,49 @@
+name: Build & release RdpHost
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v3.7.7). Must match config.py rdphost.url.'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish RdpHost
+        shell: pwsh
+        run: |
+          dotnet publish native/RdpHost/RdpHost.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+
+      - name: Compute SHA256 and write sidecar
+        shell: pwsh
+        run: |
+          $exe = "native/RdpHost/bin/Release/net8.0-windows/win-x64/publish/RdpHost.exe"
+          if (-not (Test-Path $exe)) { throw "Publish output missing: $exe" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash" | Set-Content -NoNewline -Encoding ascii "RdpHost.exe.sha256"
+          Write-Output "RdpHost SHA256: $hash"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            native/RdpHost/bin/Release/net8.0-windows/win-x64/publish/RdpHost.exe
+            RdpHost.exe.sha256

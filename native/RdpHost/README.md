@@ -34,6 +34,12 @@ publish exceeds GitHub's 100 MiB file limit. Build it with `dotnet publish -c
 Release` and copy the output into `assets/native/RdpHost/` during release. The
 build intermediate folders (`bin/`, `obj/`) are gitignored.
 
+For releases, `.github/workflows/rdphost-release.yml` builds the exe in CI and
+attaches it (plus `RdpHost.exe.sha256`) to the GitHub Release. At runtime the app
+downloads it on first use when it is missing (`src/child_session/rdphost_download.py`),
+so end users need neither the .NET SDK nor a manual build. Keep `config.py`'s
+`rdphost.url` pointing at the release tag that actually published the asset.
+
 ## Command line
 
 ```
