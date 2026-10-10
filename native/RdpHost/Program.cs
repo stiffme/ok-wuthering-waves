@@ -38,19 +38,19 @@ internal static class Program
         var form = new RdpHostForm(options.Width, options.Height);
         var pipe = new PipeServer(options.PipeName, request => Dispatch(form, request));
 
-        form.LoginCompleted += (_, _) => pipe.SendEvent("login_complete");
-        form.ConnectionFailed += (_, e) => pipe.SendEvent("connection_failed", new JsonObject
+        form.LoginCompleted += (_, _) => _ = pipe.SendEventAsync("login_complete");
+        form.ConnectionFailed += (_, e) => _ = pipe.SendEventAsync("connection_failed", new JsonObject
         {
             ["message"] = e.Message,
             ["errorCode"] = e.ErrorCode,
             ["extendedErrorCode"] = e.ExtendedErrorCode,
         });
-        form.RemoteDesktopSizeChanged += (_, size) => pipe.SendEvent("remote_desktop_size_change", new JsonObject
+        form.RemoteDesktopSizeChanged += (_, size) => _ = pipe.SendEventAsync("remote_desktop_size_change", new JsonObject
         {
             ["width"] = size.Width,
             ["height"] = size.Height,
         });
-        form.InputWindowFocusChanged += (_, focused) => pipe.SendEvent("input_window_focus", new JsonObject
+        form.InputWindowFocusChanged += (_, focused) => _ = pipe.SendEventAsync("input_window_focus", new JsonObject
         {
             ["focused"] = focused,
         });

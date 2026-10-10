@@ -100,7 +100,7 @@ def launch_in_session(session_id, executable_path, arguments="", working_directo
             _TASK_LOGON_INTERACTIVE_TOKEN, None)
         registered = True
 
-        running = registered_task.RunEx(None, _TASK_RUN_USE_SESSION_ID, int(session_id), None)
+        running = registered_task.RunEx(None, _TASK_RUN_USE_SESSION_ID, int(session_id), "")
         if running is None:
             raise SessionLaunchError("任务计划程序没有返回运行实例。")
     finally:
@@ -117,10 +117,17 @@ def _okww_entry():
     if getattr(sys, "frozen", False):
         return sys.executable, [], os.path.dirname(sys.executable)
 
-    main_script = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else None
-    if not main_script or not main_script.lower().endswith(".py"):
+    # The real app entry is main.py at the repo root. `ok` is vendored one level
+    # below it (<repo>/ok), so derive the repo root from ok's location instead of
+    # sys.argv[0] — under `python -m src.child_session.spike` argv[0] is spike.py,
+    # not main.py.
+    import ok
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(ok.__file__)))
+    main_script = os.path.join(repo_root, "main.py")
+    if not os.path.isfile(main_script):
         main_script = os.path.join(os.getcwd(), "main.py")
-    return sys.executable, [main_script], os.getcwd()
+    return sys.executable, [main_script], os.path.dirname(main_script)
 
 
 def launch_okww_in_session(session_id, extra_args=None):

@@ -4,6 +4,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RdpHost;
 
@@ -11,13 +12,18 @@ namespace RdpHost;
 /// Named-pipe server the ok-ww Python side connects to. Reads framed JSON requests,
 /// dispatches them to <paramref name="handler"/> (which must marshal to the UI thread),
 /// and writes back framed JSON responses plus unsolicited events and raw-mouse frames.
+///
+/// The pipe is opened with FILE_FLAG_OVERLAPPED (PipeOptions.Asynchronous) and all reads
+/// and writes go through async I/O. The reader thread blocks in ReadFrameAsync while the
+/// UI thread pushes events through SendEventAsync; on a synchronous handle those two would
+/// serialize on the handle and deadlock, so overlapped I/O is required on this side too.
 /// </summary>
 internal sealed class PipeServer : IDisposable
 {
     private readonly string _pipeName;
     private readonly Func<JsonObject, JsonObject?> _handler;
     private readonly Action<PayloadType, byte[]>? _onBinaryFrame;
-    private readonly object _writeLock = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ManualResetEventSlim _stopped = new(false);
 
     private NamedPipeServerStream? _stream;
@@ -49,13 +55,13 @@ internal sealed class PipeServer : IDisposable
             try
             {
                 server = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 1,
-                    PipeTransmissionMode.Byte, PipeOptions.None, 65536, 65536);
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
                 _stream = server;
                 server.WaitForConnection();
                 ClientConnected?.Invoke();
-                ReadLoop(server);
+                ReadLoop(server).GetAwaiter().GetResult();
             }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or OperationCanceledException)
             {
                 // Client went away; recreate the pipe and wait for a reconnect.
             }
@@ -81,11 +87,11 @@ internal sealed class PipeServer : IDisposable
         _stopped.Set();
     }
 
-    private void ReadLoop(Stream stream)
+    private async Task ReadLoop(Stream stream)
     {
         while (_running)
         {
-            var payload = Protocol.ReadFrame(stream, out var type);
+            var (type, payload) = await Protocol.ReadFrameAsync(stream).ConfigureAwait(false);
             if (payload is null)
             {
                 return;
@@ -97,11 +103,11 @@ internal sealed class PipeServer : IDisposable
                 continue;
             }
 
-            HandleJson(stream, payload);
+            await HandleJsonAsync(stream, payload).ConfigureAwait(false);
         }
     }
 
-    private void HandleJson(Stream stream, byte[] payload)
+    private async Task HandleJsonAsync(Stream stream, byte[] payload)
     {
         string id = string.Empty;
         try
@@ -110,29 +116,29 @@ internal sealed class PipeServer : IDisposable
                           ?? throw new InvalidOperationException("命名管道 JSON 消息为空。");
             id = request["id"]?.GetValue<string>() ?? string.Empty;
             var data = _handler(request);
-            WriteJson(stream, new JsonObject
+            await WriteJsonAsync(stream, new JsonObject
             {
                 ["v"] = 1,
                 ["id"] = id,
                 ["op"] = "response",
                 ["ok"] = true,
                 ["data"] = data ?? new JsonObject(),
-            });
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            WriteJson(stream, new JsonObject
+            await WriteJsonAsync(stream, new JsonObject
             {
                 ["v"] = 1,
                 ["id"] = id,
                 ["op"] = "response",
                 ["ok"] = false,
                 ["error"] = ex.GetBaseException().Message,
-            });
+            }).ConfigureAwait(false);
         }
     }
 
-    internal void SendEvent(string name, JsonNode? data = null)
+    internal async Task SendEventAsync(string name, JsonNode? data = null)
     {
         var ev = new JsonObject
         {
@@ -145,10 +151,10 @@ internal sealed class PipeServer : IDisposable
             ev["data"] = data;
         }
 
-        SendFrame(PayloadType.Json, Encoding.UTF8.GetBytes(ev.ToJsonString()));
+        await SendFrameAsync(PayloadType.Json, Encoding.UTF8.GetBytes(ev.ToJsonString())).ConfigureAwait(false);
     }
 
-    internal void SendFrame(PayloadType type, byte[] payload)
+    internal async Task SendFrameAsync(PayloadType type, byte[] payload)
     {
         var stream = _stream;
         if (stream is null)
@@ -158,9 +164,14 @@ internal sealed class PipeServer : IDisposable
 
         try
         {
-            lock (_writeLock)
+            await _writeLock.WaitAsync().ConfigureAwait(false);
+            try
             {
-                Protocol.WriteFrame(stream, type, payload);
+                await Protocol.WriteFrameAsync(stream, type, payload).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeLock.Release();
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
@@ -169,13 +180,18 @@ internal sealed class PipeServer : IDisposable
         }
     }
 
-    private void WriteJson(Stream stream, JsonObject obj)
+    private async Task WriteJsonAsync(Stream stream, JsonObject obj)
     {
         try
         {
-            lock (_writeLock)
+            await _writeLock.WaitAsync().ConfigureAwait(false);
+            try
             {
-                Protocol.WriteFrame(stream, PayloadType.Json, Encoding.UTF8.GetBytes(obj.ToJsonString()));
+                await Protocol.WriteFrameAsync(stream, PayloadType.Json, Encoding.UTF8.GetBytes(obj.ToJsonString())).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeLock.Release();
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
