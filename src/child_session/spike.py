@@ -1,0 +1,151 @@
+"""Phase 0 feasibility spike for the desktop-clone feature (Windows only).
+
+Run from the repo root, as administrator:
+
+    python -m src.child_session.spike                 # enable + embed + Win+D
+    python -m src.child_session.spike --launch notepad.exe
+    python -m src.child_session.spike --launch-okww    # also start a 2nd ok-ww
+
+This exercises the four gated primitives:
+  1. enable the child session and read its id / RDP port
+  2. launch a process into the child session (invisible on the main desktop)
+  3. start RdpHost.exe and connect it to the child session
+  4. embed the helper window inside a Qt container and send Win+D
+
+It is a diagnostic, not the real UI (see src/child_session/window.py in later phases).
+"""
+
+import argparse
+import sys
+
+if sys.platform != "win32":
+    raise SystemExit("桌面分身仅在 Windows 上可用。")
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QWindow
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QPushButton,
+                               QVBoxLayout, QWidget)
+
+from src.child_session import session_launcher, wts_api
+from src.child_session.rdp_host import RdpHostProcess
+
+
+class SpikeWindow(QWidget):
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+        self.host = None
+        self.container = None
+        self.setWindowTitle("ok-ww 桌面分身 — Phase 0 spike")
+        self.resize(1000, 700)
+
+        root = QVBoxLayout(self)
+        self.status = QLabel("初始化中…")
+        root.addWidget(self.status)
+
+        buttons = QHBoxLayout()
+        for text, slot in (
+            ("启用 Child Session", self.enable_session),
+            ("启动测试程序", self.launch_test_exe),
+            ("启动子实例 ok-ww", self.launch_okww),
+            ("运行桌面 / Win+D", lambda: self._shortcut("win_d")),
+            ("Win+Tab", lambda: self._shortcut("win_tab")),
+            ("断开并退出", self.shutdown),
+        ):
+            button = QPushButton(text)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        root.addLayout(buttons)
+
+        self.embed_holder = QVBoxLayout()
+        root.addLayout(self.embed_holder, stretch=1)
+
+    # -- actions --------------------------------------------------------------
+
+    def enable_session(self):
+        try:
+            if not wts_api.is_child_sessions_enabled():
+                wts_api.enable_child_sessions()
+            self.status.setText(
+                f"Child Session 已启用，id={wts_api.get_child_session_id()}，"
+                f"RDP 端口={wts_api.get_rdp_port()}，rdpwrap={wts_api.is_rdp_wrapper_enabled()}")
+        except Exception as ex:
+            self.status.setText(f"启用 Child Session 失败：{ex}")
+
+    def launch_test_exe(self):
+        try:
+            session_id = wts_api.get_child_session_id()
+            if session_id is None:
+                self.status.setText("没有可用的 Child Session，请先启用。")
+                return
+            target = self.args.launch or "notepad.exe"
+            session_launcher.launch_in_session(session_id, target)
+            self.status.setText(f"已在会话 {session_id} 启动 {target}（主桌面上不可见即正确）")
+        except Exception as ex:
+            self.status.setText(f"启动失败：{ex}")
+
+    def launch_okww(self):
+        try:
+            session_id = wts_api.get_child_session_id()
+            if session_id is None:
+                self.status.setText("没有可用的 Child Session，请先启用。")
+                return
+            session_launcher.launch_okww_in_session(session_id)
+            self.status.setText(f"已在会话 {session_id} 启动子实例 ok-ww（--instance childSession）")
+        except Exception as ex:
+            self.status.setText(f"启动子实例失败：{ex}")
+
+    def start_host(self):
+        try:
+            self.host = RdpHostProcess()
+            self.host.on_event("login_complete", lambda _d: self.status.setText("RDP 登录完成"))
+            self.host.on_event("connection_failed",
+                               lambda d: self.status.setText(f"RDP 连接失败：{d.get('message')}"))
+            self.host.on_event("input_window_focus",
+                               lambda d: self.status.setText(f"桌面分身输入焦点：{d.get('focused')}"))
+            hello = self.host.start()
+            if not hello.get("hostHwnd"):
+                self.status.setText("RdpHost 未返回窗口句柄。")
+                return
+            window = QWindow.fromWinId(int(hello["hostHwnd"]))
+            self.container = QWidget.createWindowContainer(window, self)
+            self.container.setMinimumSize(320, 200)
+            self.embed_holder.addWidget(self.container)
+            self.host.connect()
+            self.status.setText(f"已嵌入 RdpHost 窗口 hwnd={hello.get('hostHwnd')}，正在连接…")
+        except Exception as ex:
+            self.status.setText(f"启动 RdpHost 失败：{ex}")
+
+    def _shortcut(self, name):
+        try:
+            self.host.send_shortcut(name)
+            self.status.setText(f"已发送 {name}")
+        except Exception as ex:
+            self.status.setText(f"发送快捷键失败：{ex}")
+
+    def shutdown(self):
+        if self.host:
+            self.host.stop(logoff=True)
+        self.close()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--launch", help="exe to launch into the child session (default notepad.exe)")
+    parser.add_argument("--launch-okww", action="store_true", help="start a 2nd ok-ww immediately")
+    parser.add_argument("--no-connect", action="store_true", help="do not auto-start the RdpHost")
+    args = parser.parse_args()
+
+    app = QApplication(sys.argv)
+    window = SpikeWindow(args)
+    window.show()
+    if not args.no_connect:
+        window.enable_session()
+        window.start_host()
+    if args.launch_okww:
+        window.launch_okww()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
