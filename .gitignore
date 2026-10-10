@@ -7,3 +7,7 @@ logs/
 **/logs/
 *.log
 *.log.*
+
+# .NET helper build intermediates (assets/native/RdpHost/ is committed instead)
+native/**/bin/
+native/**/obj/
