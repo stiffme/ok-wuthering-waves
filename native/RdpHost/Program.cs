@@ -86,8 +86,8 @@ internal static class Program
 
             case "connect":
                 form.Connect(
-                    GetInt(args, "width", 1280),
-                    GetInt(args, "height", 720),
+                    GetInt(args, "width", 1920),
+                    GetInt(args, "height", 1080),
                     GetBool(args, "smartSizing", true),
                     GetBool(args, "audioMuted", false),
                     GetBool(args, "sendSystemShortcuts", true));
@@ -99,7 +99,7 @@ internal static class Program
 
             case "reconnect":
             case "resize":
-                form.Reconnect(GetInt(args, "width", 1280), GetInt(args, "height", 720));
+                form.Reconnect(GetInt(args, "width", 1920), GetInt(args, "height", 1080));
                 return new JsonObject();
 
             case "set_smart_sizing":
@@ -195,8 +195,8 @@ internal static class Program
     private static Options ParseArguments(string[] args)
     {
         string? pipe = null;
-        var width = 1280;
-        var height = 720;
+        var width = 1920;
+        var height = 1080;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])

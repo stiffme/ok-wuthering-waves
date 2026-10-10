@@ -16,21 +16,27 @@ It is a diagnostic, not the real UI (see src/child_session/window.py in later ph
 """
 
 import argparse
+import os
 import sys
+import threading
 
 if sys.platform != "win32":
     raise SystemExit("桌面分身仅在 Windows 上可用。")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QPushButton,
                                QVBoxLayout, QWidget)
 
 from src.child_session import session_launcher, wts_api
 from src.child_session.rdp_host import RdpHostProcess
+from src.child_session.rdphost_download import ensure_rdphost
 
 
 class SpikeWindow(QWidget):
+    _download_progress = Signal(float, str)
+    _rdphost_ready = Signal(object)
+
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -38,6 +44,8 @@ class SpikeWindow(QWidget):
         self.container = None
         self.setWindowTitle("ok-ww 桌面分身 — Phase 0 spike")
         self.resize(1000, 700)
+        self._download_progress.connect(self._on_download_progress)
+        self._rdphost_ready.connect(self._on_rdphost_ready)
 
         root = QVBoxLayout(self)
         self.status = QLabel("初始化中…")
@@ -97,6 +105,33 @@ class SpikeWindow(QWidget):
             self.status.setText(f"启动子实例失败：{ex}")
 
     def start_host(self):
+        exe = RdpHostProcess.exe_path()
+        if not exe or not os.path.isfile(exe):
+            self.status.setText("正在下载 RdpHost…")
+            threading.Thread(target=self._ensure_rdphost, daemon=True,
+                             name="rdphost-download").start()
+            return
+        self._start_host()
+
+    def _ensure_rdphost(self):
+        try:
+            ensure_rdphost(callback=lambda p, s: self._download_progress.emit(p, s))
+            self._rdphost_ready.emit((True, None))
+        except Exception as ex:
+            self._rdphost_ready.emit((False, str(ex)))
+
+    def _on_download_progress(self, percent, size_str):
+        self.status.setText(f"正在下载 RdpHost… {percent:.0f}% ({size_str})")
+
+    def _on_rdphost_ready(self, result):
+        ok, error = result
+        if ok:
+            self.status.setText("RdpHost 下载完成，正在启动…")
+            self._start_host()
+        else:
+            self.status.setText(f"RdpHost 下载失败：{error}")
+
+    def _start_host(self):
         try:
             self.host = RdpHostProcess()
             self.host.on_event("login_complete", lambda _d: self.status.setText("RDP 登录完成"))

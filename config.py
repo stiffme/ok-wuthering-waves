@@ -298,6 +298,12 @@ config = {
         'to_version': '1.2.3',
         'zip_url': 'https://github.com/ok-oldking/ok-wuthering-waves/releases/download/v3.5.30/ok-ww-win32.zip',
         'sha256': '447207edbfb6944beb994347048e155df99775eb18c87dcae54dda125071c94a',
-    }
+    },
+    # RdpHost.exe（桌面分身 helper）以 GitHub Release 资产形式分发，首次使用时自动下载。
+    # 由 .github/workflows/rdphost-release.yml 构建并上传 RdpHost.exe 与 RdpHost.exe.sha256。
+    # 发布时把 url 改成实际发布仓库与 tag。
+    'rdphost': {
+        'url': 'https://github.com/stiffme/ok-wuthering-waves/releases/download/v3.7.7/RdpHost.exe',
+    },
 
 }
