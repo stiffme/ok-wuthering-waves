@@ -679,6 +679,12 @@ class OK:
         default_start_method = _resolve('WINDOWS_START_METHOD_START')
         wgc_available = _resolve('windows_graphics_available')
 
+        self.args = parse_arguments()
+        if self.args.get('instance') == 'childSession':
+            # A second ok-ww runs in the desktop-clone child session alongside the
+            # root instance; both share the same working directory, so the cwd-derived
+            # single-instance mutex would otherwise reject the child.
+            config['check_mutex'] = False
         if config.get('check_mutex', True):
             if not check_mutex_fn():
                 raise RuntimeError(
@@ -700,7 +706,6 @@ class OK:
         pyappify.logger = logger
         logger.info(
             f"pyappify  app_version:{pyappify.app_version}, app_profile:{pyappify.app_profile}, pyappify_version:{pyappify.pyappify_version} pyappify_upgradeable:{pyappify.pyappify_upgradeable}, pyappify_executable:{pyappify.pyappify_executable}")
-        self.args = parse_arguments()
         self._runtime_start_lock = threading.Lock()
         self._runtime_started = False
         self.task_executor = None

@@ -8,6 +8,13 @@ logs/
 *.log
 *.log.*
 
-# .NET helper build intermediates (assets/native/RdpHost/ is committed instead)
+# .NET helper build intermediates
 native/**/bin/
 native/**/obj/
+
+# Published helper exe is built during release (self-contained >100 MiB, can't be committed)
+assets/native/RdpHost/RdpHost.exe
+
+# Runtime artifacts
+configs_child/
+cache/

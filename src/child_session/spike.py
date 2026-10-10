@@ -50,6 +50,7 @@ class SpikeWindow(QWidget):
             ("启动子实例 ok-ww", self.launch_okww),
             ("运行桌面 / Win+D", lambda: self._shortcut("win_d")),
             ("Win+Tab", lambda: self._shortcut("win_tab")),
+            ("隐藏/显示桌面", self.toggle_desktop),
             ("断开并退出", self.shutdown),
         ):
             button = QPushButton(text)
@@ -122,6 +123,14 @@ class SpikeWindow(QWidget):
             self.status.setText(f"已发送 {name}")
         except Exception as ex:
             self.status.setText(f"发送快捷键失败：{ex}")
+
+    def toggle_desktop(self):
+        if self.container is None:
+            self.status.setText("尚未嵌入 RdpHost 窗口，无法隐藏。")
+            return
+        visible = self.container.isVisible()
+        self.container.setVisible(not visible)
+        self.status.setText("已隐藏桌面分身。" if visible else "已显示桌面分身。")
 
     def shutdown(self):
         if self.host:

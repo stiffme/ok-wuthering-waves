@@ -590,6 +590,10 @@ def parse_arguments_to_map(description="main script"):
     )
     parser.add_argument("-e", "--exit", action="store_true", help="exit after task")
     parser.add_argument("-h", "--headless", action="store_true", help="start without ui")
+    parser.add_argument("--instance", type=str, default=None,
+                        help="instance mode, e.g. childSession for the desktop-clone child instance")
+    parser.add_argument("--instance-pipe", type=str, default=None,
+                        help="named pipe for the root/child instance IPC")
 
     args, _ = parser.parse_known_args()
 

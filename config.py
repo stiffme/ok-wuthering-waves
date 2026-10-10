@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 from pathlib import Path
 
 from ok import Box, ConfigOption, Icon
@@ -8,6 +9,17 @@ from src.game_launcher import get_game_launch_arguments
 from src.task.process_feature import process_feature
 
 version = "v3.7.4"
+
+
+def _is_child_session_instance() -> bool:
+    """True when this process is the desktop-clone child (`--instance childSession`)."""
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg == '--instance':
+            return i + 1 < len(argv) and argv[i + 1] == 'childSession'
+        if arg == '--instance=childSession':
+            return True
+    return False
 
 
 def _find_most_recently_run_pc_exe():
@@ -163,7 +175,9 @@ config = {
     "gui": {
         "type": "qt",
     },
-    'config_folder': 'configs',
+    # The desktop-clone child instance gets its own config folder so the two
+    # processes don't clobber each other's configs/devices.json.
+    'config_folder': 'configs_child' if _is_child_session_instance() else 'configs',
     'blur_area': blur_area,
     'gui_icon': 'icons/icon.png',
     'global_configs': [basic_config_option, key_config_option, char_config_option, monthly_card_config_option],

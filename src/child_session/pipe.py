@@ -1,8 +1,13 @@
-"""Named-pipe frame codec and blocking client.
+"""Named-pipe frame codec and client.
 
 Shared by the helper pipe (`okww.rdphost.*`, the .NET RdpHost.exe is the server)
 and the root<->child instance IPC pipe. Frame layout matches BetterGenshinImpact's
 `InstanceIpcProtocol`: uint32 payloadLength (LE, max 1 MiB) + byte payloadType + payload.
+
+The pipe handle is opened for overlapped (asynchronous) I/O. A synchronous
+blocking read and a synchronous blocking write on the same named-pipe handle
+deadlock each other (Windows serializes I/O per handle), so the reader thread and
+the request-writing thread must not contend — overlapped I/O lets both proceed.
 """
 
 import struct
@@ -20,6 +25,9 @@ PAYLOAD_RELATIVE_MOUSE_RESULT = 3
 MAX_PAYLOAD_LENGTH = 1024 * 1024
 _HEADER = struct.Struct("<IB")
 
+_ERROR_IO_PENDING = 997
+_WAIT_OBJECT_0 = 0
+
 
 def encode_frame(payload_type: int, payload: bytes = b"") -> bytes:
     if len(payload) > MAX_PAYLOAD_LENGTH:
@@ -35,7 +43,7 @@ def parse_header(header: bytes):
 
 
 class PipeClient:
-    """Blocking named-pipe client (pywin32). One reader thread is expected."""
+    """Named-pipe client (pywin32, overlapped I/O). One reader thread is expected."""
 
     def __init__(self, name: str):
         if not name.startswith("\\\\.\\pipe\\"):
@@ -57,7 +65,8 @@ class PipeClient:
                 self._handle = win32file.CreateFile(
                     self._path,
                     win32file.GENERIC_READ | win32file.GENERIC_WRITE,
-                    0, None, win32file.OPEN_EXISTING, 0, None)
+                    0, None, win32file.OPEN_EXISTING,
+                    win32file.FILE_FLAG_OVERLAPPED, None)
                 return
             except pywintypes.error:
                 if time.time() >= deadline:
@@ -65,11 +74,9 @@ class PipeClient:
                 time.sleep(0.2)
 
     def write_frame(self, payload_type: int, payload: bytes = b""):
-        import win32file
-
         if self._handle is None:
             raise ConnectionError("命名管道尚未连接。")
-        win32file.WriteFile(self._handle, encode_frame(payload_type, payload))
+        self._write_all(encode_frame(payload_type, payload))
 
     def read_frame(self):
         """Return (payload_type, payload), or None on clean EOF."""
@@ -85,20 +92,53 @@ class PipeClient:
         return payload_type, payload
 
     def _read_exact(self, size: int):
+        import pywintypes
+        import win32api
+        import win32event
         import win32file
 
         buffer = bytearray()
         while len(buffer) < size:
+            overlapped = pywintypes.OVERLAPPED()
+            overlapped.hEvent = win32event.CreateEvent(None, True, False, None)
             try:
-                _, data = win32file.ReadFile(self._handle, size - len(buffer))
-            except Exception:
-                if not buffer:
-                    return None
-                raise
-            if not data:
+                err, data = win32file.ReadFile(self._handle, size - len(buffer), overlapped)
+                if err == _ERROR_IO_PENDING:
+                    win32event.WaitForSingleObject(overlapped.hEvent, win32event.INFINITE)
+                    transferred = win32file.GetOverlappedResult(self._handle, overlapped, True)
+                    chunk = bytes(data[:transferred]) if transferred else b""
+                elif err != 0:
+                    raise pywintypes.error(err, "ReadFile")
+                else:
+                    chunk = bytes(data)
+            finally:
+                win32api.CloseHandle(overlapped.hEvent)
+
+            if not chunk:
                 return None if not buffer else bytes(buffer)
-            buffer.extend(data)
+            buffer.extend(chunk)
         return bytes(buffer)
+
+    def _write_all(self, data: bytes):
+        import pywintypes
+        import win32api
+        import win32event
+        import win32file
+
+        offset = 0
+        while offset < len(data):
+            overlapped = pywintypes.OVERLAPPED()
+            overlapped.hEvent = win32event.CreateEvent(None, True, False, None)
+            try:
+                err, written = win32file.WriteFile(self._handle, data[offset:], overlapped)
+                if err == _ERROR_IO_PENDING:
+                    win32event.WaitForSingleObject(overlapped.hEvent, win32event.INFINITE)
+                    written = win32file.GetOverlappedResult(self._handle, overlapped, True)
+                elif err != 0:
+                    raise pywintypes.error(err, "WriteFile")
+            finally:
+                win32api.CloseHandle(overlapped.hEvent)
+            offset += written
 
     def close(self):
         if self._handle is not None:

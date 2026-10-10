@@ -29,7 +29,9 @@ Then copy the published output into the app so `get_path_relative_to_exe` finds 
 Copy-Item bin/Release/net8.0-windows/win-x64/publish/* ../..//assets/native/RdpHost/ -Recurse
 ```
 
-`assets/native/RdpHost/` is committed so end users do not need the .NET SDK. The
+`assets/native/RdpHost/RdpHost.exe` is **not** committed — a self-contained WinForms
+publish exceeds GitHub's 100 MiB file limit. Build it with `dotnet publish -c
+Release` and copy the output into `assets/native/RdpHost/` during release. The
 build intermediate folders (`bin/`, `obj/`) are gitignored.
 
 ## Command line
