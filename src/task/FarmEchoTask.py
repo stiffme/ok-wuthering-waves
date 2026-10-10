@@ -484,16 +484,27 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 self.run_until(lambda: self.in_combat() or self.find_treasure_icon(), 'w', time_out=12, running=True,
                                target=True)
             else:
-                # 无铭探索者重新挑战后，boss在前方一段距离处刷新，需主动向前跑靠近触发战斗
-                self.run_until(lambda: self.in_combat(), 'w', time_out=8, running=True, target=True)
-                if not self.in_combat():
-                    # 向前跑仍未触发战斗，回退到小地图导航
-                    self.go_to_boss_minimap(time_out=10)
+                self._approach_unnamed_explorer()
             self.execute_treasure_hunt()
         # 等待进入战斗，无铭探索者可能需要更长时间
         self.wait_until(
             self.in_combat, raise_if_not_found=False, time_out=10
         )
+
+    def _approach_unnamed_explorer(self, max_attempts=3):
+        """无铭探索者无索敌，重新挑战后必须主动贴近才能触发战斗。
+        单次前跑或小地图导航都可能因刷新点太远失败，故做有界重试：
+        每轮先摆正朝向再前跑，失败则回退小地图导航(内部含传送兜底)。"""
+        for attempt in range(1, max_attempts + 1):
+            self.log_info(f'approach unnamed explorer attempt {attempt}/{max_attempts}')
+            self.center_camera()
+            if self.run_until(lambda: self.in_combat(), 'w', time_out=10, running=True, target=True):
+                return True
+            self.go_to_boss_minimap(time_out=8)
+            if self.in_combat():
+                return True
+        self.log_info('approach unnamed explorer failed, all attempts exhausted')
+        return False
 
     def init_parameters(self):
         self.target_enemy_time_out = 3 if self._in_realm else 1.2
