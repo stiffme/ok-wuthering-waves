@@ -118,6 +118,12 @@ internal sealed class RdpActiveXHost : AxHost
         {
             var extendedSettings = (IMsRdpExtendedSettings)client;
             TrySetExtendedProperty(extendedSettings, "EnableZoom", true);
+            // 相对鼠标模式（Win11 24H2+）。开启后，当远端会话隐藏光标（游戏捕获鼠标、
+            // 进入 raw input）时，客户端发送「相对位移」而不是绝对坐标，游戏因此拿到
+            // 1:1 的视角增量，避免绝对坐标换算被 DPI/缩放/加速放大导致的「视角飞快」。
+            // 相对增量与 SmartSizing 的画面缩放无关，所以缩放照样全屏、视角依然 1:1。
+            // 旧系统不支持该属性时静默跳过（TrySetExtendedProperty 吞掉 COMException）。
+            TrySetExtendedProperty(extendedSettings, "AllowRelativeMouseMode", true);
             extendedSettings.set_Property("ConnectToChildSession", ref connectToChildSession);
         });
 
