@@ -58,6 +58,8 @@ internal sealed class RdpActiveXHost : AxHost
 
     internal event EventHandler<(int Width, int Height)>? RemoteDesktopSizeChanged;
 
+    internal event EventHandler<bool>? MouseInputModeChanged;
+
     internal RdpConnectionFailedEventArgs? LastConnectionDiagnostic => _lastConnectionDiagnostic;
 
     internal RdpActiveXHost()
@@ -436,6 +438,11 @@ internal sealed class RdpActiveXHost : AxHost
         RemoteDesktopSizeChanged?.Invoke(this, (width, height));
     }
 
+    private void OnMouseInputModeChanged(bool isRelativeMouseMode)
+    {
+        MouseInputModeChanged?.Invoke(this, isRelativeMouseMode);
+    }
+
     private int TryGetExtendedDisconnectReason()
     {
         try
@@ -610,7 +617,7 @@ internal sealed class RdpActiveXHost : AxHost
         public void OnLogonError(int errorCode) => owner.OnLogonError(errorCode);
         public void OnFocusReleased(int direction) { }
         public void OnUserNameAcquired(string userName) { }
-        public void OnMouseInputModeChanged(bool isRelativeMouseMode) { }
+        public void OnMouseInputModeChanged(bool isRelativeMouseMode) => owner.OnMouseInputModeChanged(isRelativeMouseMode);
         public void OnServiceMessageReceived(string serviceMessage) { }
         public void OnConnectionBarPullDown() { }
         public void OnNetworkStatusChanged(uint qualityLevel, int bandwidth, int roundTripTime) { }

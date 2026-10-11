@@ -304,7 +304,7 @@ config = {
     # 由 .github/workflows/rdphost-release.yml 构建并上传 RdpHost.exe 与 RdpHost.exe.sha256。
     # 发布时把 url 改成实际发布仓库与 tag。
     'rdphost': {
-        'url': 'https://github.com/stiffme/ok-wuthering-waves/releases/download/v3.7.8-rc.6/RdpHost.exe',
+        'url': 'https://github.com/stiffme/ok-wuthering-waves/releases/download/v3.7.8-rc.19/RdpHost.exe',
     },
 
 }
