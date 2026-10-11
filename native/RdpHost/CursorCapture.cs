@@ -9,8 +9,11 @@ namespace RdpHost;
 /// VM-style cursor capture for the embedded RDP view.
 ///
 /// Clicking inside the connected desktop traps the physical cursor within the view
-/// (ClipCursor) and hides it (Cursor.Hide) so the remote cursor becomes the only one
-/// visible; pressing Alt releases the trap and returns the cursor to the host.
+/// (ClipCursor); pressing Alt releases the trap and returns the cursor to the host.
+///
+/// The cursor is deliberately never hidden here: the RDP ActiveX renders the remote
+/// cursor as a local hardware cursor on this same UI thread, so calling Cursor.Hide()
+/// would hide the remote cursor too and leave nothing visible inside the clone.
 ///
 /// Global low-level hooks are required because the RDP ActiveX control swallows the raw
 /// mouse/keyboard messages through its own "Input Capture Window" and (with
@@ -65,7 +68,6 @@ internal sealed class CursorCapture : IDisposable
         InstallKeyboardHook();
         var clipRect = ToRect(_form.RectangleToScreen(_form.ClientRectangle));
         _ = ClipCursor(ref clipRect);
-        Cursor.Hide();
         CapturedChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -78,7 +80,6 @@ internal sealed class CursorCapture : IDisposable
 
         _captured = false;
         _ = ClipCursor(IntPtr.Zero);
-        Cursor.Show();
         CapturedChanged?.Invoke(this, EventArgs.Empty);
     }
 
